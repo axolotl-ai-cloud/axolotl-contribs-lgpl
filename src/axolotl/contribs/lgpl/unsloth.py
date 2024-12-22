@@ -24,7 +24,7 @@ LOG = logging.getLogger("axolotl.contribs.lgpl.unsloth")
 
 @torch.inference_mode()
 def fix_untrained_tokens(  # pylint: disable=too-many-return-statements
-        model, tokenizer, train_dataset, ignored_tokenizer_names=None, eps=1e-16
+        model, tokenizer, train_dataset, ignored_tokenizer_names=None, eps=1e-16, token_ids_to_fix=None,
 ):
     """
     Llama-3 for eg has untrained vectors in the base model.
@@ -32,6 +32,8 @@ def fix_untrained_tokens(  # pylint: disable=too-many-return-statements
     We reset them to the mean of the rest of the tokens
     """
     # Code licensed under LGPL
+    if not token_ids_to_fix:
+        token_ids_to_fix = []
     embedding_matrix = model.get_input_embeddings().weight
     lm_head_matrix = model.get_output_embeddings().weight
     chat_template = getattr(tokenizer, "chat_template", None)
@@ -91,6 +93,7 @@ def fix_untrained_tokens(  # pylint: disable=too-many-return-statements
 
     # Get set and actual tokens
     where_untrained = where_untrained.tolist()
+    where_untrained = list(set(where_untrained) + set(token_ids_to_fix))
     if len(where_untrained) == 0:
         return
 
