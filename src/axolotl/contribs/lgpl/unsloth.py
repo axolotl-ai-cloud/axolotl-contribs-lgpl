@@ -93,7 +93,7 @@ def fix_untrained_tokens(  # pylint: disable=too-many-return-statements
 
     # Get set and actual tokens
     where_untrained = where_untrained.tolist()
-    where_untrained = list(set(where_untrained) + set(token_ids_to_fix))
+    where_untrained = list(set(token_ids_to_fix + where_untrained))
     if len(where_untrained) == 0:
         return
 
