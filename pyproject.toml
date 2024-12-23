@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "axolotl-contribs-lgpl"
-version = "0.0.2"
+version = "0.0.3.dev0"
 description = "LGPL contributions to the axolotl framework"
 authors = [{ name="Wing Lian" }]
 readme = "README.md"
