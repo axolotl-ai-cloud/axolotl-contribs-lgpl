@@ -15,6 +15,7 @@ import itertools
 import logging
 from collections import Counter
 from contextlib import nullcontext
+from functools import partial
 
 import datasets
 import deepspeed
@@ -309,9 +310,12 @@ def fix_untrained_tokens(
         embedding_layer = model.get_input_embeddings()
         lm_head_layer = model.get_output_embeddings()
 
-        # Get the full parameters if using DeepSpeed
-        context = deepspeed.zero.GatheredParameters([embedding_layer.weight, lm_head_layer.weight], modifier_rank=0) if is_ds_zero3 else nullcontext()
-        with context:
+        context = nullcontext
+        if is_ds_zero3:
+            # Get the full parameters if using DeepSpeed
+            context = partial(deepspeed.zero.GatheredParameters, [embedding_layer.weight, lm_head_layer.weight], modifier_rank=0)
+
+        with context():
             input_embeddings = model.get_input_embeddings()
             output_embeddings = model.get_output_embeddings()
             mean_embedding_repeated, mean_lm_head_repeated, tokens_to_update = get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=eps, token_ids_to_fix=token_ids_to_fix)
