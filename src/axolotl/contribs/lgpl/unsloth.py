@@ -14,6 +14,7 @@ import gc
 import itertools
 import logging
 from collections import Counter
+from contextlib import nullcontext
 
 import datasets
 import deepspeed
@@ -24,6 +25,29 @@ LOG = logging.getLogger("axolotl.contribs.lgpl.unsloth")
 
 
 def get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=1e-16, token_ids_to_fix=None):
+    """
+    Detects tokens with untrained embeddings (values close to zero or duplicated) and
+    prepares scaled mean embedding values for these tokens based on their frequency in the training data.
+
+    Args:
+        input_embeddings: The model's input embedding layer (embed_tokens)
+        output_embeddings: The model's output embedding layer (lm_head)
+        tokenizer: The tokenizer used with the model
+        train_dataset: The training dataset to analyze token frequencies
+        eps: Small epsilon value to detect near-zero embeddings (default: 1e-16)
+        token_ids_to_fix: Additional token IDs to include in the fixing process
+
+    Returns:
+        tuple: If untrained tokens are found in the training data, returns:
+            - mean_embedding_repeated: Scaled mean embeddings for input layer
+            - mean_lm_head_repeated: Scaled mean embeddings for output layer
+            - tokens_to_update: List of token IDs that need updating
+        None: If no untrained tokens are found in the training data
+
+    Raises:
+        ValueError: If embedding matrices have incorrect shapes or if untrained tokens are found but embeddings are not trainable
+    """
+
     # Check if we still have an issue with the shapes
     if input_embeddings.weight.shape[0] == 0 or output_embeddings.weight.shape[0] == 0:
         raise ValueError(
@@ -254,8 +278,17 @@ def fix_untrained_tokens(
         model, tokenizer, train_dataset, ignored_tokenizer_names=None, eps=1e-16, token_ids_to_fix=None, is_ds_zero3=False
 ):
     """
-    Modified version of fix_untrained_tokens that works with distributed settings like DeepSpeed ZeRO-3.
-    Handles cases where embedding_matrix.shape might be [0] due to parameter sharding/offloading.
+    Some base models have untrained vectors for embeddings/tokens. Update these embeddings to
+    the mean of the rest of the tokens. This additionally handles distributed settings like DeepSpeed ZeRO-3.
+
+    Args:
+        model: The model to fix embeddings for
+        tokenizer: The tokenizer used with the model
+        train_dataset: The training dataset to analyze token frequencies
+        ignored_tokenizer_names: List of model names to skip processing (default: None)
+        eps: Small epsilon value to detect near-zero embeddings (default: 1e-16)
+        token_ids_to_fix: Additional token IDs to include in the fixing process (default: None)
+        is_ds_zero3: Whether DeepSpeed ZeRO-3 is being used (default: False)
     """
 
     if not token_ids_to_fix:
@@ -277,29 +310,19 @@ def fix_untrained_tokens(
         lm_head_layer = model.get_output_embeddings()
 
         # Get the full parameters if using DeepSpeed
-        if is_ds_zero3:
-            with deepspeed.zero.GatheredParameters([embedding_layer.weight, lm_head_layer.weight], modifier_rank=0):
-                input_embeddings = model.get_input_embeddings()
-                output_embeddings = model.get_output_embeddings()
-                mean_embedding_repeated, mean_lm_head_repeated, tokens_to_update = get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=eps, token_ids_to_fix=token_ids_to_fix)
-                input_embeddings.weight[tokens_to_update] = mean_embedding_repeated.to(
-                    input_embeddings.weight.dtype
-                )
-                model.set_input_embeddings(input_embeddings)
-                output_embeddings.weight[tokens_to_update] = mean_lm_head_repeated.to(output_embeddings.weight.dtype)
-                model.set_output_embeddings(output_embeddings)
-        else:
-            # Fallback to original approach if not using DeepSpeed
-            input_embeddings = embedding_layer
-            output_embeddings = lm_head_layer
+        context = deepspeed.zero.GatheredParameters([embedding_layer.weight, lm_head_layer.weight], modifier_rank=0) if is_ds_zero3 else nullcontext()
+        with context:
+            input_embeddings = model.get_input_embeddings()
+            output_embeddings = model.get_output_embeddings()
             mean_embedding_repeated, mean_lm_head_repeated, tokens_to_update = get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=eps, token_ids_to_fix=token_ids_to_fix)
             input_embeddings.weight[tokens_to_update] = mean_embedding_repeated.to(
                 input_embeddings.weight.dtype
             )
+            model.set_input_embeddings(input_embeddings)
             output_embeddings.weight[tokens_to_update] = mean_lm_head_repeated.to(output_embeddings.weight.dtype)
+            model.set_output_embeddings(output_embeddings)
 
     # Clean up
     for _ in range(3):
         gc.collect()
         torch.cuda.empty_cache()
-    return
