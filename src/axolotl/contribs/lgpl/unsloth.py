@@ -16,6 +16,7 @@ import logging
 from collections import Counter
 
 import datasets
+import deepspeed
 import numpy as np
 import torch
 
