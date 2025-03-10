@@ -18,7 +18,6 @@ from contextlib import nullcontext
 from functools import partial
 
 import datasets
-import deepspeed
 import numpy as np
 import torch
 
@@ -312,6 +311,7 @@ def fix_untrained_tokens(
 
         context = nullcontext
         if is_ds_zero3:
+            import deepspeed
             # Get the full parameters if using DeepSpeed
             context = partial(deepspeed.zero.GatheredParameters, [embedding_layer.weight, lm_head_layer.weight], modifier_rank=0)
 
