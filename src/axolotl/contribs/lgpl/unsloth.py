@@ -318,7 +318,10 @@ def fix_untrained_tokens(
         with context():
             input_embeddings = model.get_input_embeddings()
             output_embeddings = model.get_output_embeddings()
-            mean_embedding_repeated, mean_lm_head_repeated, tokens_to_update = get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=eps, token_ids_to_fix=token_ids_to_fix)
+            res = get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dataset, eps=eps, token_ids_to_fix=token_ids_to_fix)
+            if not res:
+                return
+            mean_embedding_repeated, mean_lm_head_repeated, tokens_to_update = res
             input_embeddings.weight[tokens_to_update] = mean_embedding_repeated.to(
                 input_embeddings.weight.dtype
             )
