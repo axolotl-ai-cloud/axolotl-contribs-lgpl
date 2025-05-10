@@ -63,8 +63,18 @@ def get_embedding_mean(input_embeddings, output_embeddings, tokenizer, train_dat
     # Sometimes the sizes can be different like in vision models
     # Ie <image> is in input, but not in output
     min_size = min(input_embeddings.weight.shape[1], output_embeddings.weight.shape[1])
-    input_embeddings.weight = torch.nn.Parameter(input_embeddings.weight[:, :min_size])
-    output_embeddings.weight = torch.nn.Parameter(output_embeddings.weight[:, :min_size])
+    with torch.no_grad():
+        # Slice off the extra dims in‐place
+        input_embeddings.weight.data = input_embeddings.weight.data[:, :min_size]
+        output_embeddings.weight.data = output_embeddings.weight.data[:, :min_size]
+
+    # Update the dim sizes
+    input_embeddings.embedding_dim = min_size
+    output_embeddings.embedding_dim = min_size
+
+    # Ensure dims are trainable
+    input_embeddings.weight.requires_grad_(True)
+    output_embeddings.weight.requires_grad_(True)
 
     # Get untrained tokens
     indicator_untrained1 = torch.amax(input_embeddings.weight, axis=1) <= eps
